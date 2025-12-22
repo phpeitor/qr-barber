@@ -1,1 +1,1 @@
-# qr-barber
+# qr-barber-shop
