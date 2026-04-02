@@ -2,12 +2,11 @@
 import Sidebar from '../components/Sidebar.astro';
 import ReportForm from '../components/ReportForm.astro';
 import ReportViewer from '../components/ReportViewer.astro';
-import { initialReports } from '../data/initialReports';
-import usersData from '../data/users.json';
+import { initialReports, users } from '../data/initialReports';
 import DashboardLayout from '../layouts/DashboardLayout.astro';
 
 const serializedReports = JSON.stringify(initialReports).replace(/</g, '\\u003c');
-const serializedUsers = JSON.stringify(usersData).replace(/</g, '\\u003c');
+const serializedUsers = JSON.stringify(users).replace(/</g, '\\u003c');
 ---
 
 <DashboardLayout title="BI Reports Hub | Astro">
@@ -21,9 +20,7 @@ const serializedUsers = JSON.stringify(usersData).replace(/</g, '\\u003c');
     <form id="login-form" class="login-form" novalidate>
       <label class="field">
         <span>Usuario</span>
-        <select id="login-user" name="user" required>
-          <option value="">Selecciona un usuario</option>
-        </select>
+        <input id="login-user" name="user" type="text" placeholder="Ej: admin" autocomplete="off" required />
       </label>
 
       <label class="field">
@@ -40,6 +37,8 @@ const serializedUsers = JSON.stringify(usersData).replace(/</g, '\\u003c');
       <p class="form-message" id="login-message" role="status" aria-live="polite"></p>
     </form>
   </section>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <div class="dashboard-shell is-hidden" id="app-root">
     <Sidebar />
@@ -131,12 +130,12 @@ const serializedUsers = JSON.stringify(usersData).replace(/</g, '\\u003c');
     const loginMessage = document.querySelector('#login-message');
     const loginUser = document.querySelector('#login-user');
     const loginRole = document.querySelector('#login-role');
+    const toast = document.querySelector('#toast');
     const appRoot = document.querySelector('#app-root');
     const sessionNote = document.querySelector('#session-note');
     const sidebarSession = document.querySelector('#sidebar-session');
     const sidebarMenu = document.querySelector('#sidebar-menu');
     const sidebarModules = document.querySelector('#sidebar-modules');
-    const sidebarLegend = document.querySelector('#sidebar-legend');
     const reportForm = document.querySelector('#report-form');
     const reportMeta = document.querySelector('#report-meta');
     const platformChip = document.querySelector('#platform-chip');
@@ -165,8 +164,6 @@ const serializedUsers = JSON.stringify(usersData).replace(/</g, '\\u003c');
     };
 
     applyThemeFromStorage();
-    renderLoginUsers();
-    syncRoleFromUser();
 
     function loadReports() {
       try {
@@ -212,34 +209,26 @@ const serializedUsers = JSON.stringify(usersData).replace(/</g, '\\u003c');
       localStorage.setItem(REPORTS_KEY, JSON.stringify(reports));
     }
 
-    function renderLoginUsers() {
-      if (!loginUser) {
-        return;
-      }
-
-      const options = userList
-        .map((item) => `<option value="${escapeHtml(item.user)}">${escapeHtml(item.displayName ?? item.user)}</option>`)
-        .join('');
-
-      loginUser.innerHTML = `<option value="">Selecciona un usuario</option>${options}`;
-    }
-
-    function syncRoleFromUser() {
-      if (!loginUser || !loginRole) {
-        return;
-      }
-
-      loginUser.addEventListener('change', () => {
-        const selectedUser = userList.find((item) => item.user === loginUser.value);
-        if (selectedUser) {
-          loginRole.value = selectedUser.role;
-        }
-      });
-    }
-
     /** @param {string} user */
     function findUser(user) {
       return userList.find((item) => item.user.toLowerCase() === user.toLowerCase()) ?? null;
+    }
+
+    let toastTimer;
+
+    function showToast(message, tone = 'error') {
+      if (!toast) {
+        return;
+      }
+
+      toast.textContent = message;
+      toast.dataset.state = tone;
+      toast.classList.add('is-visible');
+
+      window.clearTimeout(toastTimer);
+      toastTimer = window.setTimeout(() => {
+        toast.classList.remove('is-visible');
+      }, 2800);
     }
 
     /** @param {SessionState | null} nextSession */
@@ -436,14 +425,13 @@ const serializedUsers = JSON.stringify(usersData).replace(/</g, '\\u003c');
     }
 
     function renderSidebar() {
-      if (!sidebarMenu || !sidebarModules || !sidebarLegend) {
+      if (!sidebarMenu || !sidebarModules) {
         return;
       }
 
       if (!session) {
         sidebarMenu.innerHTML = '';
         sidebarModules.innerHTML = '';
-        sidebarLegend.innerHTML = '<span class="legend-dot"></span><span>Inicia sesion para navegar reportes</span>';
         return;
       }
 
@@ -456,15 +444,9 @@ const serializedUsers = JSON.stringify(usersData).replace(/</g, '\\u003c');
           const count = visibleReports.filter((report) => report.module === moduleName).length;
           const label = escapeHtml(moduleName);
           const badge = escapeHtml(shortLabel(moduleName));
-          return `<button class="menu-item ${activeClass}" type="button" data-module="${label}" title="${label}" aria-label="${label}"><span class="menu-icon" aria-hidden="true">${badge}</span><span class="menu-label">${label}</span><span class="menu-count">${count}</span></button>`;
+          return `<button class="menu-item has-tooltip ${activeClass}" type="button" data-module="${label}" data-tooltip="${label}" aria-label="${label}"><span class="menu-icon" aria-hidden="true">${badge}</span><span class="menu-label">${label}</span><span class="menu-count">${count}</span></button>`;
         })
         .join('');
-
-      if (session.role === 'admin') {
-        sidebarLegend.innerHTML = '<span class="legend-dot"></span><span>Admin ve todos los modulos y reportes</span>';
-      } else {
-        sidebarLegend.innerHTML = `<span class="legend-dot"></span><span>Menu de ${roleLabels[session.role]}</span>`;
-      }
 
       const grouped = visibleReports.reduce((acc, report) => {
         if (!acc[report.module]) {
@@ -489,13 +471,13 @@ const serializedUsers = JSON.stringify(usersData).replace(/</g, '\\u003c');
               const reportId = escapeHtml(report.id);
               const reportBadge = escapeHtml(shortLabel(report.name));
 
-              return `<li><button class="report-link ${selectedClass}" data-report-id="${reportId}" type="button" title="${reportLabel}" aria-label="${reportLabel}"><span class="report-dot" aria-hidden="true">${reportBadge}</span><span class="report-label">${reportLabel}</span></button></li>`;
+              return `<li><button class="report-link has-tooltip ${selectedClass}" data-report-id="${reportId}" type="button" data-tooltip="${reportLabel}" aria-label="${reportLabel}"><span class="report-dot" aria-hidden="true">${reportBadge}</span><span class="report-label">${reportLabel}</span></button></li>`;
             })
             .join('');
 
           return `
             <details class="module-group" ${open} data-module-group="${moduleLabel}">
-              <summary class="module-summary" title="${moduleLabel}"><span class="module-badge" aria-hidden="true">${moduleBadge}</span><span class="module-label">${moduleLabel}</span></summary>
+              <summary class="module-summary has-tooltip" data-tooltip="${moduleLabel}"><span class="module-badge" aria-hidden="true">${moduleBadge}</span><span class="module-label">${moduleLabel}</span></summary>
               <ul class="module-list">${reportsHtml}</ul>
             </details>
           `;
@@ -631,6 +613,8 @@ const serializedUsers = JSON.stringify(usersData).replace(/</g, '\\u003c');
           loginMessage.textContent = 'Selecciona un usuario valido.';
           loginMessage.dataset.state = 'error';
         }
+
+        showToast('Selecciona un usuario válido.', 'error');
         return;
       }
 
@@ -641,6 +625,8 @@ const serializedUsers = JSON.stringify(usersData).replace(/</g, '\\u003c');
           loginMessage.dataset.state = 'error';
         }
 
+        showToast('El usuario no existe en la lista permitida.', 'error');
+
         return;
       }
 
@@ -649,6 +635,8 @@ const serializedUsers = JSON.stringify(usersData).replace(/</g, '\\u003c');
           loginMessage.textContent = 'El rol no coincide con el usuario seleccionado.';
           loginMessage.dataset.state = 'error';
         }
+
+        showToast('El rol no coincide con el usuario seleccionado.', 'error');
 
         return;
       }
@@ -666,6 +654,7 @@ const serializedUsers = JSON.stringify(usersData).replace(/</g, '\\u003c');
       renderSidebar();
       renderTable();
       updateViewer();
+      showToast(`Bienvenido, ${matchedUser.displayName ?? matchedUser.user}.`, 'success');
     });
 
     logoutBtn?.addEventListener('click', () => {
