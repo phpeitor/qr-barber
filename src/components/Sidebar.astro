@@ -1,0 +1,86 @@
+---
+import type { ReportItem } from '../data/initialReports';
+
+interface Props {
+  reports: ReportItem[];
+}
+
+const { reports } = Astro.props;
+
+const groupedModules = reports.reduce<Record<string, ReportItem[]>>((acc, report) => {
+  if (!acc[report.module]) {
+    acc[report.module] = [];
+  }
+
+  acc[report.module].push(report);
+  return acc;
+}, {});
+
+const modules = Object.entries(groupedModules);
+const firstReportId = reports[0]?.id ?? '';
+
+function shortLabel(value: string) {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? '')
+    .join('');
+}
+---
+
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-top">
+    <div class="brand-wrap">
+      <p class="brand-eyebrow">Analytics Hub</p>
+      <h1 class="brand-title">BI Workspace</h1>
+    </div>
+    <button class="ghost-btn" id="sidebar-toggle" type="button" aria-label="Colapsar sidebar">
+      <span class="icon-bars" aria-hidden="true"></span>
+    </button>
+  </div>
+
+  <nav class="menu-block" aria-label="Navegacion principal">
+    <button class="menu-item active" type="button" aria-label="Reportes" title="Reportes">
+      <span class="menu-icon" aria-hidden="true">R</span>
+      <span class="menu-label">Reportes</span>
+    </button>
+    <button class="menu-item" type="button" disabled aria-label="Dashboards" title="Dashboards">
+      <span class="menu-icon" aria-hidden="true">D</span>
+      <span class="menu-label">Dashboards</span>
+    </button>
+    <button class="menu-item" type="button" disabled aria-label="Favoritos" title="Favoritos">
+      <span class="menu-icon" aria-hidden="true">F</span>
+      <span class="menu-label">Favoritos</span>
+    </button>
+  </nav>
+
+  <div class="modules-wrap" id="sidebar-modules">
+    {
+      modules.map(([moduleName, moduleReports], moduleIndex) => (
+        <details class="module-group" open={moduleIndex === 0}>
+          <summary class="module-summary" title={moduleName}>
+            <span class="module-badge" aria-hidden="true">{shortLabel(moduleName)}</span>
+            <span class="module-label">{moduleName}</span>
+          </summary>
+          <ul class="module-list">
+            {moduleReports.map((report) => (
+              <li>
+                <button
+                  class:list={['report-link', report.id === firstReportId && 'active']}
+                  data-report-id={report.id}
+                  type="button"
+                  title={report.name}
+                  aria-label={report.name}
+                >
+                  <span class="report-dot" aria-hidden="true">{shortLabel(report.name)}</span>
+                  <span class="report-label">{report.name}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ))
+    }
+  </div>
+</aside>

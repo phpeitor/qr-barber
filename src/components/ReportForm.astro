@@ -1,0 +1,42 @@
+<section class="panel card-panel" aria-labelledby="form-title">
+  <div class="panel-head">
+    <h2 id="form-title">Registrar Reporte</h2>
+    <p>Agrega nuevas visualizaciones por modulo de negocio.</p>
+  </div>
+
+  <form id="report-form" class="report-form" novalidate>
+    <label class="field">
+      <span>Nombre del reporte</span>
+      <input id="report-name" name="name" type="text" placeholder="Ej: KPI de Rentabilidad" required />
+    </label>
+
+    <label class="field">
+      <span>Categoria o modulo</span>
+      <input id="report-module" name="module" type="text" placeholder="Ej: Finanzas" required />
+    </label>
+
+    <label class="field">
+      <span>URL del reporte</span>
+      <input
+        id="report-url"
+        name="url"
+        type="url"
+        placeholder="https://app.fabric.microsoft.com/view?r=..."
+        required
+      />
+    </label>
+
+    <label class="field">
+      <span>Plataforma</span>
+      <select id="report-platform" name="platform">
+        <option value="auto">Deteccion automatica</option>
+        <option value="powerbi">Power BI</option>
+        <option value="tableau">Tableau</option>
+        <option value="other">Otra plataforma BI</option>
+      </select>
+    </label>
+
+    <button class="primary-btn" type="submit">Guardar reporte</button>
+    <p class="form-message" id="form-message" role="status" aria-live="polite"></p>
+  </form>
+</section>

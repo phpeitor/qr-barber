@@ -1,0 +1,313 @@
+---
+import Sidebar from '../components/Sidebar.astro';
+import ReportForm from '../components/ReportForm.astro';
+import ReportViewer from '../components/ReportViewer.astro';
+import { initialReports } from '../data/initialReports';
+import DashboardLayout from '../layouts/DashboardLayout.astro';
+
+const serializedReports = JSON.stringify(initialReports).replace(/</g, '\\u003c');
+---
+
+<DashboardLayout title="BI Reports Hub | Astro">
+  <div class="dashboard-shell" id="app-root">
+    <Sidebar reports={initialReports} />
+
+    <main class="content-area">
+      <header class="topbar">
+        <div>
+          <p class="topbar-label">Plataforma de inteligencia</p>
+          <h2>Centro de Reportes Embebidos</h2>
+        </div>
+
+        <button class="ghost-btn" type="button" id="theme-toggle" aria-label="Cambiar tema">
+          Cambiar tema
+        </button>
+      </header>
+
+      <section class="content-grid">
+        <ReportForm />
+        <ReportViewer />
+      </section>
+    </main>
+  </div>
+
+  <script type="module" define:vars={{ serializedReports }}>
+    /** @typedef {'powerbi' | 'tableau' | 'other'} BiPlatform */
+    /** @typedef {'iframe-public' | 'official-sdk' | 'secure-token'} EmbedStrategy */
+
+    /** @typedef {{
+     * id: string;
+     * name: string;
+     * module: string;
+     * url: string;
+     * platform: BiPlatform;
+     * strategy: EmbedStrategy;
+     * }} ReportItem
+     */
+
+    /** @type {ReportItem[]} */
+    const reports = JSON.parse(serializedReports);
+    let selectedReportId = reports[0]?.id ?? '';
+
+    const appRoot = document.querySelector('#app-root');
+    const themeToggle = document.querySelector('#theme-toggle');
+    const sidebarToggle = document.querySelector('#sidebar-toggle');
+    const sidebarModules = document.querySelector('#sidebar-modules');
+    const reportForm = document.querySelector('#report-form');
+    const reportMeta = document.querySelector('#report-meta');
+    const platformChip = document.querySelector('#platform-chip');
+    const embedGuidance = document.querySelector('#embed-guidance');
+    const reportFrame = document.querySelector('#report-frame');
+    const formMessage = document.querySelector('#form-message');
+
+    const savedTheme = localStorage.getItem('bi-theme');
+    if (savedTheme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+
+    const uniqueId = () => {
+      if (window.crypto?.randomUUID) {
+        return window.crypto.randomUUID();
+      }
+
+      return `report-${Date.now()}-${Math.floor(Math.random() * 99999)}`;
+    };
+
+    /** @param {string} url */
+    function detectPlatform(url) {
+      const lowered = url.toLowerCase();
+
+      if (lowered.includes('powerbi') || lowered.includes('fabric.microsoft.com')) {
+        return 'powerbi';
+      }
+
+      if (lowered.includes('tableau')) {
+        return 'tableau';
+      }
+
+      return 'other';
+    }
+
+    /** @param {string} url */
+    function resolveStrategy(url) {
+      const lowered = url.toLowerCase();
+      const platform = detectPlatform(url);
+
+      if (platform === 'powerbi') {
+        if (lowered.includes('fabric.microsoft.com/view?r=')) {
+          return 'iframe-public';
+        }
+
+        if (lowered.includes('reportembed')) {
+          return 'secure-token';
+        }
+
+        return 'official-sdk';
+      }
+
+      if (platform === 'tableau') {
+        if (lowered.includes('public.tableau.com')) {
+          return 'iframe-public';
+        }
+
+        return 'official-sdk';
+      }
+
+      return 'iframe-public';
+    }
+
+    /** @param {string} url */
+    function normalizeUrl(url) {
+      const platform = detectPlatform(url);
+
+      if (platform !== 'tableau') {
+        return url;
+      }
+
+      try {
+        const parsed = new URL(url);
+        if (!parsed.searchParams.has(':showVizHome')) {
+          parsed.searchParams.set(':showVizHome', 'no');
+        }
+
+        return parsed.toString();
+      } catch {
+        return url;
+      }
+    }
+
+    /** @param {ReportItem} report */
+    function guidanceText(report) {
+      const hints = {
+        'iframe-public': 'URL publica detectada. Se usa iframe por simplicidad y rendimiento.',
+        'official-sdk': 'Se recomienda embedding oficial de la plataforma para controlar eventos y navegacion avanzada.',
+        'secure-token': 'URL segura detectada. Para entorno productivo usa embedding oficial con token y backend seguro.'
+      };
+
+      return hints[report.strategy];
+    }
+
+    function updateViewer() {
+      const selected = reports.find((report) => report.id === selectedReportId) ?? reports[0];
+
+      if (!selected || !reportMeta || !platformChip || !embedGuidance || !reportFrame) {
+        return;
+      }
+
+      reportMeta.textContent = `${selected.module} | ${selected.name}`;
+      platformChip.textContent = `${selected.platform.toUpperCase()} | ${selected.strategy}`;
+      embedGuidance.textContent = guidanceText(selected);
+      reportFrame.src = normalizeUrl(selected.url);
+
+      document.querySelectorAll('.report-link').forEach((link) => {
+        link.classList.toggle('active', link.getAttribute('data-report-id') === selected.id);
+      });
+    }
+
+    function groupReports() {
+      return reports.reduce((acc, report) => {
+        if (!acc[report.module]) {
+          acc[report.module] = [];
+        }
+
+        acc[report.module].push(report);
+        return acc;
+      }, /** @type {Record<string, ReportItem[]>} */ ({}));
+    }
+
+    /** @param {string} value */
+    function shortLabel(value) {
+      return value
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((word) => word[0]?.toUpperCase() ?? '')
+        .join('');
+    }
+
+    /** @param {string} value */
+    function escapeHtml(value) {
+      return value
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function renderSidebar() {
+      if (!sidebarModules) {
+        return;
+      }
+
+      const grouped = groupReports();
+      const modules = Object.entries(grouped)
+        .sort(([a], [b]) => a.localeCompare(b, 'es'))
+        .map(([module, moduleReports], index) => {
+          const links = moduleReports
+            .map((report) => {
+              const selectedClass = report.id === selectedReportId ? 'active' : '';
+              const reportName = escapeHtml(report.name);
+              const reportId = escapeHtml(report.id);
+              const reportShort = escapeHtml(shortLabel(report.name));
+
+              return `<li><button class="report-link ${selectedClass}" data-report-id="${reportId}" type="button" title="${reportName}" aria-label="${reportName}"><span class="report-dot" aria-hidden="true">${reportShort}</span><span class="report-label">${reportName}</span></button></li>`;
+            })
+            .join('');
+
+          const open = index === 0 ? 'open' : '';
+          const safeModule = escapeHtml(module);
+          const moduleShort = escapeHtml(shortLabel(module));
+
+          return `
+            <details class="module-group" ${open}>
+              <summary class="module-summary" title="${safeModule}"><span class="module-badge" aria-hidden="true">${moduleShort}</span><span class="module-label">${safeModule}</span></summary>
+              <ul class="module-list">${links}</ul>
+            </details>
+          `;
+        })
+        .join('');
+
+      sidebarModules.innerHTML = modules;
+      bindReportLinks();
+    }
+
+    function bindReportLinks() {
+      document.querySelectorAll('.report-link').forEach((link) => {
+        link.addEventListener('click', () => {
+          const reportId = link.getAttribute('data-report-id');
+          if (!reportId) {
+            return;
+          }
+
+          selectedReportId = reportId;
+          updateViewer();
+        });
+      });
+    }
+
+    function setMessage(message, isError = false) {
+      if (!formMessage) {
+        return;
+      }
+
+      formMessage.textContent = message;
+      formMessage.dataset.state = isError ? 'error' : 'ok';
+    }
+
+    sidebarToggle?.addEventListener('click', () => {
+      appRoot?.classList.toggle('sidebar-collapsed');
+    });
+
+    themeToggle?.addEventListener('click', () => {
+      const nextTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', nextTheme);
+      localStorage.setItem('bi-theme', nextTheme);
+    });
+
+    reportForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+
+      const formData = new FormData(reportForm);
+      const name = String(formData.get('name') ?? '').trim();
+      const module = String(formData.get('module') ?? '').trim();
+      const url = String(formData.get('url') ?? '').trim();
+      const platformInput = String(formData.get('platform') ?? 'auto');
+
+      if (!name || !module || !url) {
+        setMessage('Completa todos los campos obligatorios.', true);
+        return;
+      }
+
+      try {
+        new URL(url);
+      } catch {
+        setMessage('La URL del reporte no es valida.', true);
+        return;
+      }
+
+      const autoPlatform = detectPlatform(url);
+      const finalPlatform = platformInput === 'auto' ? autoPlatform : platformInput;
+
+      /** @type {ReportItem} */
+      const newReport = {
+        id: uniqueId(),
+        name,
+        module,
+        url,
+        platform: /** @type {BiPlatform} */ (finalPlatform),
+        strategy: resolveStrategy(url)
+      };
+
+      reports.push(newReport);
+      selectedReportId = newReport.id;
+      renderSidebar();
+      updateViewer();
+      reportForm.reset();
+      setMessage('Reporte registrado correctamente.');
+    });
+
+    bindReportLinks();
+    updateViewer();
+  </script>
+</DashboardLayout>
