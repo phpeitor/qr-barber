@@ -3,35 +3,96 @@ import Sidebar from '../components/Sidebar.astro';
 import ReportForm from '../components/ReportForm.astro';
 import ReportViewer from '../components/ReportViewer.astro';
 import { initialReports } from '../data/initialReports';
+import usersData from '../data/users.json';
 import DashboardLayout from '../layouts/DashboardLayout.astro';
 
 const serializedReports = JSON.stringify(initialReports).replace(/</g, '\\u003c');
+const serializedUsers = JSON.stringify(usersData).replace(/</g, '\\u003c');
 ---
 
 <DashboardLayout title="BI Reports Hub | Astro">
-  <div class="dashboard-shell" id="app-root">
-    <Sidebar reports={initialReports} />
+  <section class="panel login-panel" id="login-panel">
+    <div class="login-copy">
+      <p class="topbar-label">Acceso por rol</p>
+      <h2>Ingresar al visor BI</h2>
+      <p>Admin registra y visualiza. Operaciones, Finanzas y Comercial solo ven su propio menu y sus reportes.</p>
+    </div>
+
+    <form id="login-form" class="login-form" novalidate>
+      <label class="field">
+        <span>Usuario</span>
+        <select id="login-user" name="user" required>
+          <option value="">Selecciona un usuario</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Rol</span>
+        <select id="login-role" name="role" required>
+          <option value="admin">Admin</option>
+          <option value="operaciones">Operaciones</option>
+          <option value="finanzas">Finanzas</option>
+          <option value="comercial">Comercial</option>
+        </select>
+      </label>
+
+      <button class="primary-btn" type="submit">Entrar</button>
+      <p class="form-message" id="login-message" role="status" aria-live="polite"></p>
+    </form>
+  </section>
+
+  <div class="dashboard-shell is-hidden" id="app-root">
+    <Sidebar />
 
     <main class="content-area">
       <header class="topbar">
         <div>
           <p class="topbar-label">Plataforma de inteligencia</p>
           <h2>Centro de Reportes Embebidos</h2>
+          <p class="session-note" id="session-note">Sesión inactiva</p>
         </div>
 
-        <button class="ghost-btn" type="button" id="theme-toggle" aria-label="Cambiar tema">
-          Cambiar tema
-        </button>
+        <div class="topbar-actions">
+          <button class="ghost-btn" type="button" id="theme-toggle" aria-label="Cambiar tema">
+            Cambiar tema
+          </button>
+          <button class="ghost-btn ghost-danger" type="button" id="logout-btn">Salir</button>
+        </div>
       </header>
 
-      <section class="content-grid">
-        <ReportForm />
+      <section class="content-grid" id="workspace-grid">
+        <div class="admin-stack" id="admin-stack">
+          <ReportForm />
+
+          <section class="panel admin-table-panel" id="admin-table-panel" aria-labelledby="table-title">
+            <div class="panel-head">
+              <h2 id="table-title">Reportes registrados</h2>
+              <p>Inventario completo visible solo para el rol admin.</p>
+            </div>
+
+            <div class="table-shell">
+              <table class="reports-table">
+                <thead>
+                  <tr>
+                    <th>Nombre</th>
+                    <th>Modulo</th>
+                    <th>Plataforma</th>
+                    <th>URL</th>
+                  </tr>
+                </thead>
+                <tbody id="reports-table-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
         <ReportViewer />
       </section>
     </main>
   </div>
 
-  <script type="module" define:vars={{ serializedReports }}>
+  <script type="module" define:vars={{ serializedReports, serializedUsers }}>
+    /** @typedef {'admin' | 'operaciones' | 'finanzas' | 'comercial'} AppRole */
     /** @typedef {'powerbi' | 'tableau' | 'other'} BiPlatform */
     /** @typedef {'iframe-public' | 'official-sdk' | 'secure-token'} EmbedStrategy */
 
@@ -45,24 +106,150 @@ const serializedReports = JSON.stringify(initialReports).replace(/</g, '\\u003c'
      * }} ReportItem
      */
 
-    /** @type {ReportItem[]} */
-    const reports = JSON.parse(serializedReports);
-    let selectedReportId = reports[0]?.id ?? '';
+    /** @typedef {{ user: string; role: AppRole }} SessionState */
 
+    /** @typedef {{ user: string; role: AppRole; displayName?: string }} UserItem */
+
+    const REPORTS_KEY = 'bi-reports-v1';
+    const AUTH_KEY = 'bi-auth-v1';
+    const THEME_KEY = 'bi-theme-v1';
+
+    /** @type {ReportItem[]} */
+    const initialReportsState = JSON.parse(serializedReports);
+    /** @type {UserItem[]} */
+    const userList = JSON.parse(serializedUsers);
+
+    /** @type {ReportItem[]} */
+    let reports = loadReports();
+    /** @type {SessionState | null} */
+    let session = loadSession();
+    let selectedReportId = '';
+    let selectedModule = '';
+
+    const loginPanel = document.querySelector('#login-panel');
+    const loginForm = document.querySelector('#login-form');
+    const loginMessage = document.querySelector('#login-message');
+    const loginUser = document.querySelector('#login-user');
+    const loginRole = document.querySelector('#login-role');
     const appRoot = document.querySelector('#app-root');
-    const themeToggle = document.querySelector('#theme-toggle');
-    const sidebarToggle = document.querySelector('#sidebar-toggle');
+    const sessionNote = document.querySelector('#session-note');
+    const sidebarSession = document.querySelector('#sidebar-session');
+    const sidebarMenu = document.querySelector('#sidebar-menu');
     const sidebarModules = document.querySelector('#sidebar-modules');
+    const sidebarLegend = document.querySelector('#sidebar-legend');
     const reportForm = document.querySelector('#report-form');
     const reportMeta = document.querySelector('#report-meta');
     const platformChip = document.querySelector('#platform-chip');
     const embedGuidance = document.querySelector('#embed-guidance');
     const reportFrame = document.querySelector('#report-frame');
     const formMessage = document.querySelector('#form-message');
+    const reportsTableBody = document.querySelector('#reports-table-body');
+    const adminStack = document.querySelector('#admin-stack');
+    const workspaceGrid = document.querySelector('#workspace-grid');
+    const themeToggle = document.querySelector('#theme-toggle');
+    const logoutBtn = document.querySelector('#logout-btn');
+    const sidebarToggle = document.querySelector('#sidebar-toggle');
 
-    const savedTheme = localStorage.getItem('bi-theme');
-    if (savedTheme === 'dark') {
-      document.documentElement.setAttribute('data-theme', 'dark');
+    const roleLabels = {
+      admin: 'Admin',
+      operaciones: 'Operaciones',
+      finanzas: 'Finanzas',
+      comercial: 'Comercial'
+    };
+
+    const roleModules = {
+      admin: null,
+      operaciones: 'Operaciones',
+      finanzas: 'Finanzas',
+      comercial: 'Comercial'
+    };
+
+    applyThemeFromStorage();
+    renderLoginUsers();
+    syncRoleFromUser();
+
+    function loadReports() {
+      try {
+        const saved = localStorage.getItem(REPORTS_KEY);
+        if (!saved) {
+          return [...initialReportsState];
+        }
+
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed) ? parsed : [...initialReportsState];
+      } catch {
+        return [...initialReportsState];
+      }
+    }
+
+    /** @returns {SessionState | null} */
+    function loadSession() {
+      try {
+        const saved = localStorage.getItem(AUTH_KEY);
+        if (!saved) {
+          return null;
+        }
+
+        const parsed = JSON.parse(saved);
+        if (!parsed || typeof parsed.user !== 'string' || typeof parsed.role !== 'string') {
+          return null;
+        }
+
+        return /** @type {SessionState} */ (parsed);
+      } catch {
+        return null;
+      }
+    }
+
+    function applyThemeFromStorage() {
+      const savedTheme = localStorage.getItem(THEME_KEY);
+      if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    }
+
+    function saveReports() {
+      localStorage.setItem(REPORTS_KEY, JSON.stringify(reports));
+    }
+
+    function renderLoginUsers() {
+      if (!loginUser) {
+        return;
+      }
+
+      const options = userList
+        .map((item) => `<option value="${escapeHtml(item.user)}">${escapeHtml(item.displayName ?? item.user)}</option>`)
+        .join('');
+
+      loginUser.innerHTML = `<option value="">Selecciona un usuario</option>${options}`;
+    }
+
+    function syncRoleFromUser() {
+      if (!loginUser || !loginRole) {
+        return;
+      }
+
+      loginUser.addEventListener('change', () => {
+        const selectedUser = userList.find((item) => item.user === loginUser.value);
+        if (selectedUser) {
+          loginRole.value = selectedUser.role;
+        }
+      });
+    }
+
+    /** @param {string} user */
+    function findUser(user) {
+      return userList.find((item) => item.user.toLowerCase() === user.toLowerCase()) ?? null;
+    }
+
+    /** @param {SessionState | null} nextSession */
+    function saveSession(nextSession) {
+      if (!nextSession) {
+        localStorage.removeItem(AUTH_KEY);
+        return;
+      }
+
+      localStorage.setItem(AUTH_KEY, JSON.stringify(nextSession));
     }
 
     const uniqueId = () => {
@@ -72,6 +259,26 @@ const serializedReports = JSON.stringify(initialReports).replace(/</g, '\\u003c'
 
       return `report-${Date.now()}-${Math.floor(Math.random() * 99999)}`;
     };
+
+    /** @param {string} value */
+    function shortLabel(value) {
+      return value
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((word) => word[0]?.toUpperCase() ?? '')
+        .join('');
+    }
+
+    /** @param {string} value */
+    function escapeHtml(value) {
+      return value
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
 
     /** @param {string} url */
     function detectPlatform(url) {
@@ -140,20 +347,209 @@ const serializedReports = JSON.stringify(initialReports).replace(/</g, '\\u003c'
     function guidanceText(report) {
       const hints = {
         'iframe-public': 'URL publica detectada. Se usa iframe por simplicidad y rendimiento.',
-        'official-sdk': 'Se recomienda embedding oficial de la plataforma para controlar eventos y navegacion avanzada.',
-        'secure-token': 'URL segura detectada. Para entorno productivo usa embedding oficial con token y backend seguro.'
+        'official-sdk': 'Para mayor control usa embedding oficial de la plataforma con eventos y token cuando aplique.',
+        'secure-token': 'URL segura detectada. En produccion usa embedding oficial con backend y token seguro.'
       };
 
       return hints[report.strategy];
     }
 
-    function updateViewer() {
-      const selected = reports.find((report) => report.id === selectedReportId) ?? reports[0];
+    /** @param {AppRole} role */
+    function getRoleModule(role) {
+      return roleModules[role];
+    }
 
-      if (!selected || !reportMeta || !platformChip || !embedGuidance || !reportFrame) {
+    /** @param {AppRole} role */
+    function getVisibleReports(role = session?.role ?? 'admin') {
+      if (role === 'admin') {
+        return [...reports];
+      }
+
+      const moduleName = getRoleModule(role);
+      return reports.filter((report) => report.module === moduleName);
+    }
+
+    /** @param {AppRole} role */
+    function getAllowedModules(role = session?.role ?? 'admin') {
+      const visibleReports = getVisibleReports(role);
+      return [...new Set(visibleReports.map((report) => report.module))].sort((a, b) => a.localeCompare(b, 'es'));
+    }
+
+    function ensureSelection() {
+      const visibleReports = getVisibleReports();
+
+      if (!visibleReports.length) {
+        selectedReportId = '';
+        selectedModule = session?.role ? (getRoleModule(session.role) ?? '') : '';
         return;
       }
 
+      const selectedReport = visibleReports.find((report) => report.id === selectedReportId);
+      if (selectedReport) {
+        selectedModule = selectedReport.module;
+        return;
+      }
+
+      selectedReportId = visibleReports[0].id;
+      selectedModule = visibleReports[0].module;
+    }
+
+    function updateSessionLabels() {
+      if (!session) {
+        return;
+      }
+
+      const label = `${session.user} | ${roleLabels[session.role]}`;
+      if (sessionNote) {
+        sessionNote.textContent = label;
+      }
+
+      if (sidebarSession) {
+        sidebarSession.textContent = label;
+      }
+    }
+
+    function renderAdminState() {
+      if (!adminStack || !workspaceGrid || !reportForm) {
+        return;
+      }
+
+      const isAdmin = session?.role === 'admin';
+      adminStack.hidden = !isAdmin;
+      reportForm.hidden = !isAdmin;
+      workspaceGrid.classList.toggle('single-view', !isAdmin);
+    }
+
+    function renderLoginState() {
+      const loggedIn = Boolean(session);
+      if (loginPanel) {
+        loginPanel.hidden = loggedIn;
+      }
+
+      if (appRoot) {
+        appRoot.classList.toggle('is-hidden', !loggedIn);
+      }
+
+      if (loggedIn) {
+        updateSessionLabels();
+      }
+    }
+
+    function renderSidebar() {
+      if (!sidebarMenu || !sidebarModules || !sidebarLegend) {
+        return;
+      }
+
+      if (!session) {
+        sidebarMenu.innerHTML = '';
+        sidebarModules.innerHTML = '';
+        sidebarLegend.innerHTML = '<span class="legend-dot"></span><span>Inicia sesion para navegar reportes</span>';
+        return;
+      }
+
+      const visibleReports = getVisibleReports();
+      const modules = getAllowedModules();
+
+      sidebarMenu.innerHTML = modules
+        .map((moduleName) => {
+          const activeClass = moduleName === selectedModule ? 'active' : '';
+          const count = visibleReports.filter((report) => report.module === moduleName).length;
+          const label = escapeHtml(moduleName);
+          const badge = escapeHtml(shortLabel(moduleName));
+          return `<button class="menu-item ${activeClass}" type="button" data-module="${label}" title="${label}" aria-label="${label}"><span class="menu-icon" aria-hidden="true">${badge}</span><span class="menu-label">${label}</span><span class="menu-count">${count}</span></button>`;
+        })
+        .join('');
+
+      if (session.role === 'admin') {
+        sidebarLegend.innerHTML = '<span class="legend-dot"></span><span>Admin ve todos los modulos y reportes</span>';
+      } else {
+        sidebarLegend.innerHTML = `<span class="legend-dot"></span><span>Menu de ${roleLabels[session.role]}</span>`;
+      }
+
+      const grouped = visibleReports.reduce((acc, report) => {
+        if (!acc[report.module]) {
+          acc[report.module] = [];
+        }
+
+        acc[report.module].push(report);
+        return acc;
+      }, /** @type {Record<string, ReportItem[]>} */ ({}));
+
+      sidebarModules.innerHTML = Object.entries(grouped)
+        .sort(([a], [b]) => a.localeCompare(b, 'es'))
+        .map(([moduleName, moduleReports], index) => {
+          const open = moduleName === selectedModule || (index === 0 && !selectedModule) ? 'open' : '';
+          const moduleLabel = escapeHtml(moduleName);
+          const moduleBadge = escapeHtml(shortLabel(moduleName));
+
+          const reportsHtml = moduleReports
+            .map((report) => {
+              const selectedClass = report.id === selectedReportId ? 'active' : '';
+              const reportLabel = escapeHtml(report.name);
+              const reportId = escapeHtml(report.id);
+              const reportBadge = escapeHtml(shortLabel(report.name));
+
+              return `<li><button class="report-link ${selectedClass}" data-report-id="${reportId}" type="button" title="${reportLabel}" aria-label="${reportLabel}"><span class="report-dot" aria-hidden="true">${reportBadge}</span><span class="report-label">${reportLabel}</span></button></li>`;
+            })
+            .join('');
+
+          return `
+            <details class="module-group" ${open} data-module-group="${moduleLabel}">
+              <summary class="module-summary" title="${moduleLabel}"><span class="module-badge" aria-hidden="true">${moduleBadge}</span><span class="module-label">${moduleLabel}</span></summary>
+              <ul class="module-list">${reportsHtml}</ul>
+            </details>
+          `;
+        })
+        .join('');
+
+      bindSidebarActions();
+    }
+
+    function renderTable() {
+      if (!reportsTableBody) {
+        return;
+      }
+
+      const visibleReports = getVisibleReports();
+      if (session?.role !== 'admin') {
+        reportsTableBody.innerHTML = '';
+        return;
+      }
+
+      if (!visibleReports.length) {
+        reportsTableBody.innerHTML = '<tr><td colspan="4">No hay reportes registrados.</td></tr>';
+        return;
+      }
+
+      reportsTableBody.innerHTML = visibleReports
+        .map((report) => {
+          const name = escapeHtml(report.name);
+          const moduleName = escapeHtml(report.module);
+          const platform = escapeHtml(report.platform.toUpperCase());
+          const url = escapeHtml(report.url);
+          return `<tr><td>${name}</td><td>${moduleName}</td><td>${platform}</td><td><a href="${url}" target="_blank" rel="noreferrer">Abrir</a></td></tr>`;
+        })
+        .join('');
+    }
+
+    function updateViewer() {
+      if (!reportMeta || !platformChip || !embedGuidance || !reportFrame) {
+        return;
+      }
+
+      const visibleReports = getVisibleReports();
+      const selected = visibleReports.find((report) => report.id === selectedReportId) ?? visibleReports[0];
+
+      if (!selected) {
+        reportMeta.textContent = 'No hay reportes disponibles para este rol.';
+        platformChip.textContent = 'Sin datos';
+        embedGuidance.textContent = 'Registra reportes desde admin o cambia de rol para ver contenido.';
+        reportFrame.removeAttribute('src');
+        return;
+      }
+
+      selectedReportId = selected.id;
+      selectedModule = selected.module;
       reportMeta.textContent = `${selected.module} | ${selected.name}`;
       platformChip.textContent = `${selected.platform.toUpperCase()} | ${selected.strategy}`;
       embedGuidance.textContent = guidanceText(selected);
@@ -162,85 +558,53 @@ const serializedReports = JSON.stringify(initialReports).replace(/</g, '\\u003c'
       document.querySelectorAll('.report-link').forEach((link) => {
         link.classList.toggle('active', link.getAttribute('data-report-id') === selected.id);
       });
+
+      document.querySelectorAll('.menu-item').forEach((button) => {
+        button.classList.toggle('active', button.getAttribute('data-module') === selected.module);
+      });
+
+      document.querySelectorAll('.module-group').forEach((details) => {
+        details.open = details.getAttribute('data-module-group') === selected.module;
+      });
     }
 
-    function groupReports() {
-      return reports.reduce((acc, report) => {
-        if (!acc[report.module]) {
-          acc[report.module] = [];
-        }
+    function bindSidebarActions() {
+      document.querySelectorAll('.menu-item').forEach((button) => {
+        button.addEventListener('click', () => {
+          const moduleName = button.getAttribute('data-module');
+          if (!moduleName) {
+            return;
+          }
 
-        acc[report.module].push(report);
-        return acc;
-      }, /** @type {Record<string, ReportItem[]>} */ ({}));
-    }
+          const moduleReports = getVisibleReports().filter((report) => report.module === moduleName);
+          if (!moduleReports.length) {
+            return;
+          }
 
-    /** @param {string} value */
-    function shortLabel(value) {
-      return value
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((word) => word[0]?.toUpperCase() ?? '')
-        .join('');
-    }
+          selectedModule = moduleName;
+          selectedReportId = moduleReports[0].id;
+          renderSidebar();
+          renderTable();
+          updateViewer();
+        });
+      });
 
-    /** @param {string} value */
-    function escapeHtml(value) {
-      return value
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
-    }
-
-    function renderSidebar() {
-      if (!sidebarModules) {
-        return;
-      }
-
-      const grouped = groupReports();
-      const modules = Object.entries(grouped)
-        .sort(([a], [b]) => a.localeCompare(b, 'es'))
-        .map(([module, moduleReports], index) => {
-          const links = moduleReports
-            .map((report) => {
-              const selectedClass = report.id === selectedReportId ? 'active' : '';
-              const reportName = escapeHtml(report.name);
-              const reportId = escapeHtml(report.id);
-              const reportShort = escapeHtml(shortLabel(report.name));
-
-              return `<li><button class="report-link ${selectedClass}" data-report-id="${reportId}" type="button" title="${reportName}" aria-label="${reportName}"><span class="report-dot" aria-hidden="true">${reportShort}</span><span class="report-label">${reportName}</span></button></li>`;
-            })
-            .join('');
-
-          const open = index === 0 ? 'open' : '';
-          const safeModule = escapeHtml(module);
-          const moduleShort = escapeHtml(shortLabel(module));
-
-          return `
-            <details class="module-group" ${open}>
-              <summary class="module-summary" title="${safeModule}"><span class="module-badge" aria-hidden="true">${moduleShort}</span><span class="module-label">${safeModule}</span></summary>
-              <ul class="module-list">${links}</ul>
-            </details>
-          `;
-        })
-        .join('');
-
-      sidebarModules.innerHTML = modules;
-      bindReportLinks();
-    }
-
-    function bindReportLinks() {
-      document.querySelectorAll('.report-link').forEach((link) => {
-        link.addEventListener('click', () => {
-          const reportId = link.getAttribute('data-report-id');
+      document.querySelectorAll('.report-link').forEach((button) => {
+        button.addEventListener('click', () => {
+          const reportId = button.getAttribute('data-report-id');
           if (!reportId) {
             return;
           }
 
-          selectedReportId = reportId;
+          const report = getVisibleReports().find((item) => item.id === reportId);
+          if (!report) {
+            return;
+          }
+
+          selectedReportId = report.id;
+          selectedModule = report.module;
+          renderSidebar();
+          renderTable();
           updateViewer();
         });
       });
@@ -255,6 +619,70 @@ const serializedReports = JSON.stringify(initialReports).replace(/</g, '\\u003c'
       formMessage.dataset.state = isError ? 'error' : 'ok';
     }
 
+    loginForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+
+      const formData = new FormData(loginForm);
+      const user = String(formData.get('user') ?? '').trim();
+      const role = String(formData.get('role') ?? 'admin');
+
+      if (!user) {
+        if (loginMessage) {
+          loginMessage.textContent = 'Selecciona un usuario valido.';
+          loginMessage.dataset.state = 'error';
+        }
+        return;
+      }
+
+      const matchedUser = findUser(user);
+      if (!matchedUser) {
+        if (loginMessage) {
+          loginMessage.textContent = 'El usuario no existe en la lista permitida.';
+          loginMessage.dataset.state = 'error';
+        }
+
+        return;
+      }
+
+      if (matchedUser.role !== role) {
+        if (loginMessage) {
+          loginMessage.textContent = 'El rol no coincide con el usuario seleccionado.';
+          loginMessage.dataset.state = 'error';
+        }
+
+        return;
+      }
+
+      session = {
+        user: matchedUser.user,
+        role: /** @type {AppRole} */ (matchedUser.role)
+      };
+
+      saveSession(session);
+      ensureSelection();
+      renderLoginState();
+      renderAdminState();
+      updateSessionLabels();
+      renderSidebar();
+      renderTable();
+      updateViewer();
+    });
+
+    logoutBtn?.addEventListener('click', () => {
+      session = null;
+      saveSession(null);
+      selectedReportId = '';
+      selectedModule = '';
+      renderLoginState();
+      renderAdminState();
+      renderSidebar();
+      renderTable();
+      updateViewer();
+      if (loginForm) {
+        loginForm.reset();
+      }
+    });
+
     sidebarToggle?.addEventListener('click', () => {
       appRoot?.classList.toggle('sidebar-collapsed');
     });
@@ -262,11 +690,16 @@ const serializedReports = JSON.stringify(initialReports).replace(/</g, '\\u003c'
     themeToggle?.addEventListener('click', () => {
       const nextTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', nextTheme);
-      localStorage.setItem('bi-theme', nextTheme);
+      localStorage.setItem(THEME_KEY, nextTheme);
     });
 
     reportForm?.addEventListener('submit', (event) => {
       event.preventDefault();
+
+      if (session?.role !== 'admin') {
+        setMessage('Solo admin puede registrar reportes.', true);
+        return;
+      }
 
       const formData = new FormData(reportForm);
       const name = String(formData.get('name') ?? '').trim();
@@ -300,14 +733,23 @@ const serializedReports = JSON.stringify(initialReports).replace(/</g, '\\u003c'
       };
 
       reports.push(newReport);
+      saveReports();
       selectedReportId = newReport.id;
+      selectedModule = newReport.module;
       renderSidebar();
+      renderTable();
       updateViewer();
       reportForm.reset();
       setMessage('Reporte registrado correctamente.');
     });
 
-    bindReportLinks();
-    updateViewer();
+    ensureSelection();
+    renderLoginState();
+    renderAdminState();
+    if (session) {
+      renderSidebar();
+      renderTable();
+      updateViewer();
+    }
   </script>
 </DashboardLayout>

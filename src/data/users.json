@@ -1,0 +1,22 @@
+[
+  {
+    "user": "admin",
+    "role": "admin",
+    "displayName": "Administrador"
+  },
+  {
+    "user": "operaciones",
+    "role": "operaciones",
+    "displayName": "Usuario Operaciones"
+  },
+  {
+    "user": "finanzas",
+    "role": "finanzas",
+    "displayName": "Usuario Finanzas"
+  },
+  {
+    "user": "comercial",
+    "role": "comercial",
+    "displayName": "Usuario Comercial"
+  }
+]

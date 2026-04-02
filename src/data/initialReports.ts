@@ -26,5 +26,13 @@ export const initialReports: ReportItem[] = [
     url: 'https://public.tableau.com/views/RegionalSampleWorkbook/Stocks?:showVizHome=no',
     platform: 'tableau',
     strategy: 'iframe-public'
+  },
+  {
+    id: 'finance-cashflow-overview',
+    name: 'Flujo de Caja',
+    module: 'Finanzas',
+    url: 'https://app.fabric.microsoft.com/view?r=eyJrIjoiZmFrZS1maW5hbmNlLXRva2VuIiwidCI6ImZha2UtdGVuYW50LWlkIiwibSI6ImZha2UtbW9kZSJ9',
+    platform: 'powerbi',
+    strategy: 'iframe-public'
   }
 ];

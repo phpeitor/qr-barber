@@ -49,6 +49,13 @@ body {
   transition: grid-template-columns 260ms ease;
 }
 
+.dashboard-shell.is-hidden,
+.panel[hidden],
+.login-panel[hidden],
+.admin-stack[hidden] {
+  display: none !important;
+}
+
 .dashboard-shell.sidebar-collapsed {
   grid-template-columns: 92px 1fr;
 }
@@ -87,6 +94,12 @@ body {
   font-size: 1.05rem;
 }
 
+.sidebar-session {
+  margin: 0.3rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
 .ghost-btn {
   border: 1px solid var(--stroke);
   background: var(--bg-panel);
@@ -100,6 +113,11 @@ body {
 
 .ghost-btn:hover {
   border-color: var(--accent);
+}
+
+.ghost-danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .icon-bars {
@@ -129,6 +147,21 @@ body {
   display: flex;
   align-items: center;
   gap: 0.55rem;
+}
+
+.menu-count {
+  margin-left: auto;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--bg-soft);
+  color: var(--text-muted);
 }
 
 .menu-icon {
@@ -162,6 +195,26 @@ body {
   overflow-y: auto;
   display: grid;
   gap: 0.6rem;
+}
+
+.sidebar-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--stroke);
+  border-radius: 0.85rem;
+  background: color-mix(in oklab, var(--bg-panel), #000000 1%);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.legend-dot {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent), transparent 82%);
 }
 
 .module-group {
@@ -276,6 +329,52 @@ body {
   grid-template-columns: minmax(280px, 360px) 1fr;
 }
 
+.content-grid.single-view {
+  grid-template-columns: 1fr;
+}
+
+.admin-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.login-panel {
+  max-width: 920px;
+  margin: 1.5rem auto;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(260px, 1.3fr) minmax(260px, 0.9fr);
+  align-items: center;
+}
+
+.login-copy h2 {
+  margin: 0.35rem 0 0;
+  font-size: clamp(1.3rem, 2.4vw, 1.8rem);
+}
+
+.login-copy p {
+  margin: 0.6rem 0 0;
+  color: var(--text-muted);
+  max-width: 58ch;
+}
+
+.login-form {
+  display: grid;
+  gap: 0.78rem;
+}
+
+.topbar-actions {
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.session-note {
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+
 .panel {
   border: 1px solid var(--stroke);
   background: var(--bg-panel);
@@ -292,6 +391,41 @@ body {
 .panel-head p {
   margin: 0.35rem 0 0;
   color: var(--text-muted);
+}
+
+.table-shell {
+  overflow-x: auto;
+}
+
+.reports-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.95rem;
+}
+
+.reports-table th,
+.reports-table td {
+  text-align: left;
+  padding: 0.78rem 0.7rem;
+  border-bottom: 1px solid var(--stroke);
+  vertical-align: top;
+  font-size: 0.9rem;
+}
+
+.reports-table th {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.reports-table a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.reports-table a:hover {
+  text-decoration: underline;
 }
 
 .report-form {
@@ -404,6 +538,7 @@ body {
 
 .dashboard-shell.sidebar-collapsed .brand-wrap,
 .dashboard-shell.sidebar-collapsed .menu-label,
+.dashboard-shell.sidebar-collapsed .menu-count,
 .dashboard-shell.sidebar-collapsed .module-label,
 .dashboard-shell.sidebar-collapsed .report-label {
   width: 0;
@@ -453,6 +588,7 @@ body {
 
   .dashboard-shell.sidebar-collapsed .brand-wrap,
   .dashboard-shell.sidebar-collapsed .menu-label,
+  .dashboard-shell.sidebar-collapsed .menu-count,
   .dashboard-shell.sidebar-collapsed .module-label,
   .dashboard-shell.sidebar-collapsed .report-label {
     width: auto;
@@ -469,6 +605,11 @@ body {
 
   .content-grid {
     grid-template-columns: 1fr;
+  }
+
+  .login-panel {
+    grid-template-columns: 1fr;
+    margin-inline: 0;
   }
 
   #report-frame {
