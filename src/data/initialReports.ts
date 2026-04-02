@@ -9,6 +9,7 @@ export interface ReportItem {
   url: string;
   platform: BiPlatform;
   strategy: EmbedStrategy;
+  status: 0 | 1;
 }
 
 export interface UserItem {
@@ -24,7 +25,8 @@ export const initialReports: ReportItem[] = [
     module: 'Comercial',
     url: 'https://app.fabric.microsoft.com/view?r=eyJrIjoiZmFrZS1leGFtcGxlLXRva2VuIiwidCI6ImZha2UtdGVuYW50LWlkIiwibSI6ImZha2UtbW9kZSJ9',
     platform: 'powerbi',
-    strategy: 'iframe-public'
+    strategy: 'iframe-public',
+    status: 1
   },
   {
     id: 'tableau-regional-demand',
@@ -32,7 +34,8 @@ export const initialReports: ReportItem[] = [
     module: 'Operaciones',
     url: 'https://public.tableau.com/views/RegionalSampleWorkbook/Stocks?:showVizHome=no',
     platform: 'tableau',
-    strategy: 'iframe-public'
+    strategy: 'iframe-public',
+    status: 1
   },
   {
     id: 'finance-cashflow-overview',
@@ -40,13 +43,14 @@ export const initialReports: ReportItem[] = [
     module: 'Finanzas',
     url: 'https://app.fabric.microsoft.com/view?r=eyJrIjoiZmFrZS1maW5hbmNlLXRva2VuIiwidCI6ImZha2UtdGVuYW50LWlkIiwibSI6ImZha2UtbW9kZSJ9',
     platform: 'powerbi',
-    strategy: 'iframe-public'
+    strategy: 'iframe-public',
+    status: 1
   }
 ];
 
 export const users: UserItem[] = [
   {
-    user: 'admin',
+    user: 'php.io',
     role: 'admin',
     displayName: 'Administrador'
   },

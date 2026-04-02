@@ -20,7 +20,7 @@ const serializedUsers = JSON.stringify(users).replace(/</g, '\\u003c');
     <form id="login-form" class="login-form" novalidate>
       <label class="field">
         <span>Usuario</span>
-        <input id="login-user" name="user" type="text" placeholder="Ej: admin" autocomplete="off" required />
+        <input id="login-user" name="user" type="text" placeholder="administrador" autocomplete="off" required />
       </label>
 
       <label class="field">
@@ -60,32 +60,36 @@ const serializedUsers = JSON.stringify(users).replace(/</g, '\\u003c');
       </header>
 
       <section class="content-grid" id="workspace-grid">
-        <div class="admin-stack" id="admin-stack">
+        <div class="admin-form-wrap" id="admin-form-wrap">
           <ReportForm />
-
-          <section class="panel admin-table-panel" id="admin-table-panel" aria-labelledby="table-title">
-            <div class="panel-head">
-              <h2 id="table-title">Reportes registrados</h2>
-              <p>Inventario completo visible solo para el rol admin.</p>
-            </div>
-
-            <div class="table-shell">
-              <table class="reports-table">
-                <thead>
-                  <tr>
-                    <th>Nombre</th>
-                    <th>Modulo</th>
-                    <th>Plataforma</th>
-                    <th>URL</th>
-                  </tr>
-                </thead>
-                <tbody id="reports-table-body"></tbody>
-              </table>
-            </div>
-          </section>
         </div>
 
         <ReportViewer />
+      </section>
+
+      <section class="panel admin-table-panel" id="admin-table-panel" aria-labelledby="table-title">
+        <div class="panel-head">
+          <h2 id="table-title">Reportes registrados</h2>
+          <p>Tabla editable con paginacion y estado (1 activo / 0 inactivo).</p>
+        </div>
+
+        <div class="table-shell">
+          <table class="reports-table">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Modulo</th>
+                <th>Plataforma</th>
+                <th>Estado</th>
+                <th>URL</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="reports-table-body"></tbody>
+          </table>
+        </div>
+
+        <div class="table-pagination" id="table-pagination"></div>
       </section>
     </main>
   </div>
@@ -102,6 +106,7 @@ const serializedUsers = JSON.stringify(users).replace(/</g, '\\u003c');
      * url: string;
      * platform: BiPlatform;
      * strategy: EmbedStrategy;
+      * status: 0 | 1;
      * }} ReportItem
      */
 
@@ -124,6 +129,9 @@ const serializedUsers = JSON.stringify(users).replace(/</g, '\\u003c');
     let session = loadSession();
     let selectedReportId = '';
     let selectedModule = '';
+    let currentPage = 1;
+    let editingReportId = '';
+    const PAGE_SIZE = 5;
 
     const loginPanel = document.querySelector('#login-panel');
     const loginForm = document.querySelector('#login-form');
@@ -139,11 +147,12 @@ const serializedUsers = JSON.stringify(users).replace(/</g, '\\u003c');
     const reportForm = document.querySelector('#report-form');
     const reportMeta = document.querySelector('#report-meta');
     const platformChip = document.querySelector('#platform-chip');
-    const embedGuidance = document.querySelector('#embed-guidance');
     const reportFrame = document.querySelector('#report-frame');
     const formMessage = document.querySelector('#form-message');
     const reportsTableBody = document.querySelector('#reports-table-body');
-    const adminStack = document.querySelector('#admin-stack');
+    const tablePagination = document.querySelector('#table-pagination');
+    const adminFormWrap = document.querySelector('#admin-form-wrap');
+    const adminTablePanel = document.querySelector('#admin-table-panel');
     const workspaceGrid = document.querySelector('#workspace-grid');
     const themeToggle = document.querySelector('#theme-toggle');
     const logoutBtn = document.querySelector('#logout-btn');
@@ -166,16 +175,22 @@ const serializedUsers = JSON.stringify(users).replace(/</g, '\\u003c');
     applyThemeFromStorage();
 
     function loadReports() {
+      const normalize = (items) =>
+        items.map((item) => ({
+          ...item,
+          status: item.status === 0 ? 0 : 1
+        }));
+
       try {
         const saved = localStorage.getItem(REPORTS_KEY);
         if (!saved) {
-          return [...initialReportsState];
+          return normalize([...initialReportsState]);
         }
 
         const parsed = JSON.parse(saved);
-        return Array.isArray(parsed) ? parsed : [...initialReportsState];
+        return Array.isArray(parsed) ? normalize(parsed) : normalize([...initialReportsState]);
       } catch {
-        return [...initialReportsState];
+        return normalize([...initialReportsState]);
       }
     }
 
@@ -332,17 +347,6 @@ const serializedUsers = JSON.stringify(users).replace(/</g, '\\u003c');
       }
     }
 
-    /** @param {ReportItem} report */
-    function guidanceText(report) {
-      const hints = {
-        'iframe-public': 'URL publica detectada. Se usa iframe por simplicidad y rendimiento.',
-        'official-sdk': 'Para mayor control usa embedding oficial de la plataforma con eventos y token cuando aplique.',
-        'secure-token': 'URL segura detectada. En produccion usa embedding oficial con backend y token seguro.'
-      };
-
-      return hints[report.strategy];
-    }
-
     /** @param {AppRole} role */
     function getRoleModule(role) {
       return roleModules[role];
@@ -350,12 +354,14 @@ const serializedUsers = JSON.stringify(users).replace(/</g, '\\u003c');
 
     /** @param {AppRole} role */
     function getVisibleReports(role = session?.role ?? 'admin') {
+      const activeReports = reports.filter((report) => report.status === 1);
+
       if (role === 'admin') {
-        return [...reports];
+        return [...activeReports];
       }
 
       const moduleName = getRoleModule(role);
-      return reports.filter((report) => report.module === moduleName);
+      return activeReports.filter((report) => report.module === moduleName);
     }
 
     /** @param {AppRole} role */
@@ -399,12 +405,13 @@ const serializedUsers = JSON.stringify(users).replace(/</g, '\\u003c');
     }
 
     function renderAdminState() {
-      if (!adminStack || !workspaceGrid || !reportForm) {
+      if (!adminFormWrap || !adminTablePanel || !workspaceGrid || !reportForm) {
         return;
       }
 
       const isAdmin = session?.role === 'admin';
-      adminStack.hidden = !isAdmin;
+      adminFormWrap.hidden = !isAdmin;
+      adminTablePanel.hidden = !isAdmin;
       reportForm.hidden = !isAdmin;
       workspaceGrid.classList.toggle('single-view', !isAdmin);
     }
@@ -488,34 +495,239 @@ const serializedUsers = JSON.stringify(users).replace(/</g, '\\u003c');
     }
 
     function renderTable() {
-      if (!reportsTableBody) {
+      if (!reportsTableBody || !tablePagination) {
         return;
       }
 
-      const visibleReports = getVisibleReports();
       if (session?.role !== 'admin') {
         reportsTableBody.innerHTML = '';
+        tablePagination.innerHTML = '';
         return;
       }
 
-      if (!visibleReports.length) {
-        reportsTableBody.innerHTML = '<tr><td colspan="4">No hay reportes registrados.</td></tr>';
+      const activeRows = reports.filter((report) => report.status === 1);
+      const totalRows = activeRows.length;
+      const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+      if (currentPage > totalPages) {
+        currentPage = totalPages;
+      }
+
+      const start = (currentPage - 1) * PAGE_SIZE;
+      const pageRows = activeRows.slice(start, start + PAGE_SIZE);
+
+      if (!totalRows) {
+        reportsTableBody.innerHTML = '<tr><td colspan="6">No hay reportes registrados.</td></tr>';
+        tablePagination.innerHTML = '';
         return;
       }
 
-      reportsTableBody.innerHTML = visibleReports
+      reportsTableBody.innerHTML = pageRows
         .map((report) => {
-          const name = escapeHtml(report.name);
+          const isEditing = editingReportId === report.id;
+          const reportName = escapeHtml(report.name);
           const moduleName = escapeHtml(report.module);
-          const platform = escapeHtml(report.platform.toUpperCase());
+          const platform = escapeHtml(report.platform);
+          const statusText = report.status === 1 ? '1' : '0';
           const url = escapeHtml(report.url);
-          return `<tr><td>${name}</td><td>${moduleName}</td><td>${platform}</td><td><a href="${url}" target="_blank" rel="noreferrer">Abrir</a></td></tr>`;
+
+          if (isEditing) {
+            return `
+              <tr>
+                <td><input class="table-input" data-edit-field="name" data-edit-id="${report.id}" value="${reportName}" /></td>
+                <td>
+                  <select class="table-input" data-edit-field="module" data-edit-id="${report.id}">
+                    <option value="Operaciones" ${report.module === 'Operaciones' ? 'selected' : ''}>Operaciones</option>
+                    <option value="Finanzas" ${report.module === 'Finanzas' ? 'selected' : ''}>Finanzas</option>
+                    <option value="Comercial" ${report.module === 'Comercial' ? 'selected' : ''}>Comercial</option>
+                  </select>
+                </td>
+                <td>
+                  <select class="table-input" data-edit-field="platform" data-edit-id="${report.id}">
+                    <option value="powerbi" ${report.platform === 'powerbi' ? 'selected' : ''}>Power BI</option>
+                    <option value="tableau" ${report.platform === 'tableau' ? 'selected' : ''}>Tableau</option>
+                    <option value="other" ${report.platform === 'other' ? 'selected' : ''}>Other</option>
+                  </select>
+                </td>
+                <td>
+                  <select class="table-input" data-edit-field="status" data-edit-id="${report.id}">
+                    <option value="1" ${report.status === 1 ? 'selected' : ''}>1</option>
+                    <option value="0" ${report.status === 0 ? 'selected' : ''}>0</option>
+                  </select>
+                </td>
+                <td><input class="table-input" data-edit-field="url" data-edit-id="${report.id}" value="${url}" /></td>
+                <td class="actions-cell">
+                  <button class="mini-btn" data-action="save" data-id="${report.id}" type="button">Guardar</button>
+                  <button class="mini-btn ghost" data-action="cancel" data-id="${report.id}" type="button">Cancelar</button>
+                </td>
+              </tr>
+            `;
+          }
+
+          return `
+            <tr>
+              <td>${reportName}</td>
+              <td>${moduleName}</td>
+              <td>${escapeHtml(platform.toUpperCase())}</td>
+              <td><span class="status-pill" data-state="${statusText}">${statusText}</span></td>
+              <td><a href="${url}" target="_blank" rel="noreferrer">Abrir</a></td>
+              <td class="actions-cell">
+                <button class="mini-btn" data-action="edit" data-id="${report.id}" type="button">Editar</button>
+                <button class="mini-btn danger" data-action="delete" data-id="${report.id}" type="button">Eliminar</button>
+              </td>
+            </tr>
+          `;
         })
         .join('');
+
+      const from = start + 1;
+      const to = Math.min(start + PAGE_SIZE, totalRows);
+
+      tablePagination.innerHTML = `
+        <span class="page-info">Mostrando ${from}-${to} de ${totalRows}</span>
+        <div class="page-actions">
+          <button class="ghost-btn mini-nav" data-page="prev" type="button" ${currentPage === 1 ? 'disabled' : ''}>Anterior</button>
+          <span class="page-count">Pagina ${currentPage} / ${totalPages}</span>
+          <button class="ghost-btn mini-nav" data-page="next" type="button" ${currentPage === totalPages ? 'disabled' : ''}>Siguiente</button>
+        </div>
+      `;
+
+      bindTableActions();
+    }
+
+    function bindTableActions() {
+      if (!reportsTableBody || !tablePagination) {
+        return;
+      }
+
+      reportsTableBody.querySelectorAll('[data-action="edit"]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const reportId = button.getAttribute('data-id');
+          if (!reportId) {
+            return;
+          }
+
+          editingReportId = reportId;
+          renderTable();
+        });
+      });
+
+      reportsTableBody.querySelectorAll('[data-action="cancel"]').forEach((button) => {
+        button.addEventListener('click', () => {
+          editingReportId = '';
+          renderTable();
+        });
+      });
+
+      reportsTableBody.querySelectorAll('[data-action="delete"]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const reportId = button.getAttribute('data-id');
+          if (!reportId) {
+            return;
+          }
+
+          reports = reports.map((item) => {
+            if (item.id !== reportId) {
+              return item;
+            }
+
+            return {
+              ...item,
+              status: 0
+            };
+          });
+
+          if (selectedReportId === reportId) {
+            selectedReportId = '';
+          }
+
+          editingReportId = '';
+          saveReports();
+          ensureSelection();
+          renderSidebar();
+          renderTable();
+          updateViewer();
+          showToast('Reporte desactivado (status 0).', 'success');
+        });
+      });
+
+      reportsTableBody.querySelectorAll('[data-action="save"]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const reportId = button.getAttribute('data-id');
+          if (!reportId) {
+            return;
+          }
+
+          const nameInput = reportsTableBody.querySelector(`[data-edit-field="name"][data-edit-id="${reportId}"]`);
+          const moduleInput = reportsTableBody.querySelector(`[data-edit-field="module"][data-edit-id="${reportId}"]`);
+          const platformInput = reportsTableBody.querySelector(`[data-edit-field="platform"][data-edit-id="${reportId}"]`);
+          const statusInput = reportsTableBody.querySelector(`[data-edit-field="status"][data-edit-id="${reportId}"]`);
+          const urlInput = reportsTableBody.querySelector(`[data-edit-field="url"][data-edit-id="${reportId}"]`);
+
+          const name = String(nameInput?.value ?? '').trim();
+          const module = String(moduleInput?.value ?? '').trim();
+          const platform = String(platformInput?.value ?? 'other');
+          const status = Number(statusInput?.value ?? 1) === 1 ? 1 : 0;
+          const url = String(urlInput?.value ?? '').trim();
+
+          if (!name || !module || !url) {
+            showToast('Completa los datos antes de guardar.', 'error');
+            return;
+          }
+
+          try {
+            new URL(url);
+          } catch {
+            showToast('La URL editada no es valida.', 'error');
+            return;
+          }
+
+          reports = reports.map((item) => {
+            if (item.id !== reportId) {
+              return item;
+            }
+
+            return {
+              ...item,
+              name,
+              module,
+              url,
+              platform: /** @type {BiPlatform} */ (platform),
+              status,
+              strategy: resolveStrategy(url)
+            };
+          });
+
+          editingReportId = '';
+          saveReports();
+          ensureSelection();
+          renderSidebar();
+          renderTable();
+          updateViewer();
+          showToast('Reporte actualizado.', 'success');
+        });
+      });
+
+      tablePagination.querySelectorAll('[data-page]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const action = button.getAttribute('data-page');
+          const totalPages = Math.max(1, Math.ceil(reports.length / PAGE_SIZE));
+
+          if (action === 'prev' && currentPage > 1) {
+            currentPage -= 1;
+          }
+
+          if (action === 'next' && currentPage < totalPages) {
+            currentPage += 1;
+          }
+
+          editingReportId = '';
+          renderTable();
+        });
+      });
     }
 
     function updateViewer() {
-      if (!reportMeta || !platformChip || !embedGuidance || !reportFrame) {
+      if (!reportMeta || !platformChip || !reportFrame) {
         return;
       }
 
@@ -525,7 +737,6 @@ const serializedUsers = JSON.stringify(users).replace(/</g, '\\u003c');
       if (!selected) {
         reportMeta.textContent = 'No hay reportes disponibles para este rol.';
         platformChip.textContent = 'Sin datos';
-        embedGuidance.textContent = 'Registra reportes desde admin o cambia de rol para ver contenido.';
         reportFrame.removeAttribute('src');
         return;
       }
@@ -534,7 +745,6 @@ const serializedUsers = JSON.stringify(users).replace(/</g, '\\u003c');
       selectedModule = selected.module;
       reportMeta.textContent = `${selected.module} | ${selected.name}`;
       platformChip.textContent = `${selected.platform.toUpperCase()} | ${selected.strategy}`;
-      embedGuidance.textContent = guidanceText(selected);
       reportFrame.src = normalizeUrl(selected.url);
 
       document.querySelectorAll('.report-link').forEach((link) => {
@@ -610,11 +820,11 @@ const serializedUsers = JSON.stringify(users).replace(/</g, '\\u003c');
 
       if (!user) {
         if (loginMessage) {
-          loginMessage.textContent = 'Selecciona un usuario valido.';
+          loginMessage.textContent = 'Ingrese un usuario valido.';
           loginMessage.dataset.state = 'error';
         }
 
-        showToast('Selecciona un usuario válido.', 'error');
+        showToast('Ingrese un usuario válido.', 'error');
         return;
       }
 
@@ -718,11 +928,13 @@ const serializedUsers = JSON.stringify(users).replace(/</g, '\\u003c');
         module,
         url,
         platform: /** @type {BiPlatform} */ (finalPlatform),
-        strategy: resolveStrategy(url)
+        strategy: resolveStrategy(url),
+        status: 1
       };
 
       reports.push(newReport);
       saveReports();
+      currentPage = Math.max(1, Math.ceil(reports.length / PAGE_SIZE));
       selectedReportId = newReport.id;
       selectedModule = newReport.module;
       renderSidebar();
